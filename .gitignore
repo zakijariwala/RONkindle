@@ -4,3 +4,6 @@ duas.sqlite
 # Python
 __pycache__/
 *.pyc
+
+# Release archives (tools/package.sh)
+dist/

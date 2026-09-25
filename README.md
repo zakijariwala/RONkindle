@@ -1,82 +1,80 @@
-# Duas for KOReader (Kindle)
+# RONkindle: Duas for KOReader
 
-A KOReader plugin for reading the Path to Supplication content (Qur'an, Namaz, Dua, Ziyarat, A'maal) on a jailbroken Kindle.
-- **Toggles:** show or hide Arabic, transliteration, English, Roman Urdu, Urdu, notes, verse numbers and waqf signs while reading, without losing your place.
-- **Bookmarks:** save any dua to a list. KOReader's own bookmarks and highlights also work inside pages.
-- **Search:** search all languages, including Arabic and Urdu typed without harakat.
+A [KOReader](https://github.com/koreader/koreader) plugin for reading the *Path to Supplication* collection on a Kindle or any other device that runs KOReader. The collection covers the Qur'an, Namaz, Dua, Ziyarat and A'maal.
 
-## 1. Build the database (on your computer)
-```bash
-python3 scripts/build_kindle_db.py ron.db duas.sqlite
-```
-This needs only Python 3, with no extra packages, and takes about 15 seconds. It produces a file of about 29 MB.
+<p>
+<img src="docs/screenshots/browser.png" width="200" alt="Browsing the collection">
+<img src="docs/screenshots/reader.png" width="200" alt="Surah Fateha with all languages">
+<img src="docs/screenshots/arabic-only.png" width="200" alt="Arabic only">
+<img src="docs/screenshots/show-menu.png" width="200" alt="The Show menu">
+</p>
 
-**Hidden entries:** entries the original app marks hidden (`IsVisible = 0`) behave as they do there. They aren't listed when you browse, but links and search still open them. 631 links on ordinary pages lead to them, such as Namaz-e-Shab's links to its parts. To list them when browsing as well, add `--include-hidden`.
+## Features
+- **Show and hide parts while reading.** Switch Arabic, transliteration, English, Roman Urdu, Urdu, notes, verse numbers and waqf signs on or off. The page restyles in place and keeps your position. Each switch can also be assigned to a gesture.
+- **Browse like the app.** Categories, sections and entries come with breadcrumbs, previous/next links and the *Path to Supplication* shortcuts.
+- **Links work.** 8,518 cross-references are tappable, and references like `Aale Imran (3:18-19)` jump to the verse.
+- **Search every language.** English, Roman Urdu, Urdu, transliteration and Arabic are all searchable, and Arabic and Urdu match without harakat. Each result shows a snippet, and tapping it jumps to the line.
+- **Bookmarks.** Hold an entry or use the menu to save it to a list. KOReader's own bookmarks, highlights and notes also work inside pages.
+- **Light on the device.**
+  - Everything is pre-rendered on your computer.
+  - The device only loads the page you open.
+  - Long surahs and duas are split into parts of about 60 KB.
+  - The database is closed while you read.
 
-**Links:** a `<Name>` reference in the text becomes a tappable link. A verse reference such as `<Aale Imran (3:18-19)>` jumps to that verse. An entry that only points to another page, such as Dua-e-Kumail in Path to Supplication, opens that page directly.
+## Install
+Requirements: a device running KOReader, such as a jailbroken Kindle, Kobo or PocketBook.
 
-**Numbering:**
-- Qur'an pages show the source's own verse numbers.
-- Instruction steps show "1.", "2." and so on, as in the app.
-- Other pages number every Arabic line that isn't a heading.
+1. Download `duas-kindle-<version>.zip` from the [releases](../../releases), or build it yourself (see below).
+2. Connect the device over USB and unzip the file at the top level of its drive. It merges into the existing `koreader/` folder, adding:
+   - `koreader/plugins/duas.koplugin/`, the plugin;
+   - `koreader/duas/duas.sqlite`, the content.
+3. Restart KOReader.
 
-## 2. Copy to the Kindle
-Connect the Kindle over USB and copy:
-
-| From | To |
-|---|---|
-| `duas.koplugin/` | `koreader/plugins/duas.koplugin/` |
-| `duas.sqlite` | `koreader/duas/duas.sqlite` |
-
-The plugin also finds `duas.sqlite` if it's placed inside `duas.koplugin/`.
-
-## 3. Use it
+## Use
 - **Open it:**
   - from the file browser: **Tools (⚙) → Duas**;
-  - while reading a dua: **Navigation (☰) → Duas**.
-- **Browse:** tap a category, then a section, then an item. Press and hold an item to bookmark it.
-- **Show:** pick the parts you want. The page restyles in place, and it takes about a second.
-- **Install Amiri Arabic font:** do this once, then restart KOReader. It gives nicer Qur'anic text; without it, KOReader uses Noto Naskh Arabic.
-- **Links:** tapping a link inside a page (a referenced dua, the breadcrumb, previous/next, a child list) opens that page.
-- **Gestures:** in **Settings → Taps and gestures → Gesture manager**, pick a gesture, go to **General**, and choose any of these:
-  - *Duas: browse*
-  - *Duas: search*
-  - *Duas: bookmarks*
-  - *Duas: Path to Supplication*
-  - *Duas: show/hide …*
+  - while reading a page: **Navigation (☰) → Duas**.
+- **Browse:** tap a category, then a section, then an entry. Press and hold an entry to bookmark it.
+- **Show:** tick the parts you want to see. At least one of Arabic, transliteration or a translation always stays on.
+- **Long pages** come in parts, with **‹ Part 1 · Part 2 of 9 · Part 3 ›** links at the top and bottom. Links, search results and bookmarks open the right part.
+- **Search…** matches every word you type as the start of a word, for example "kum" finds "Kumail".
+- **Install Amiri Arabic font (optional):** Amiri is more calligraphic. KOReader's built-in Noto Naskh is lighter and cleaner.
+- **Gestures:** go to **Settings → Taps and gestures → Gesture manager**, pick a gesture, then **General**, and choose any *Duas: …* action. These include browse, search, bookmarks, Path to Supplication and each show/hide switch.
 
-  For example, a two-finger swipe could toggle English.
+## Build it yourself
+The content comes from `ron.db`, the database of the *Path to Supplication* app, which is included in this repository. You need only Python 3.
+```bash
+python3 scripts/build_kindle_db.py ron.db duas.sqlite   # about 15 s, about 30 MB
+tools/package.sh                                        # the release zips, in dist/
+```
+Options and behaviour:
+- **Hidden entries:** entries the app hides from its index (`IsVisible = 0`) are hidden here too, but links and search still open them. `--include-hidden` lists them when browsing as well.
+- **Verse numbers:**
+  - Qur'an pages use the source's own verse numbers.
+  - Numbered instructions show as "1.", "2." and so on.
+  - Other pages number every Arabic line that isn't a heading.
 
-## How it keeps the Kindle light
-- Everything is pre-rendered on the computer, and each page is compressed in the database.
-- On the Kindle, opening an item writes one small HTML file to `koreader/duas/pages/` and opens it in KOReader's normal reader. Only that item is ever loaded.
-- Pages are regenerated only when the database changes.
-- Toggles change the stylesheet rather than the document.
-- Search uses a SQLite FTS5 index built into the database.
+## Performance
+Measured in KOReader v2026.07.2 on a virtual greyscale screen of 1072×1448 at 300 dpi, with KOReader limited to 10% of one desktop CPU core (see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)):
+
+| Operation | Time |
+|---|---|
+| Open the browser | 0.5 s |
+| Open Baqarah, the longest page (part 1 of 9) | 1.5 s |
+| Hide or show a language on that page | 0.4–0.5 s |
+| Search, even for a very common word | 0.1 s or less |
+| Jump to a verse in another part | 1.5 s |
 
 ## Development
-- **Plugin code:** `duas.koplugin/` (`main.lua` plus the `duas*.lua` modules).
-- **Off-device tests:** they need LuaJIT and a checkout of `koreader-base`.
-  ```bash
-  git clone --depth 1 https://github.com/koreader/koreader-base.git
-  tools/run_tests.sh ron.db duas.sqlite koreader-base
-  ```
-  They cover:
-  - the database queries, page generation, snippets, search and styles;
-  - that search normalisation gives the same result in Lua as in Python;
-  - a smoke test of `main.lua` using stand-ins for KOReader's UI.
-- **In-app tests:** these run the plugin inside a real KOReader (the official Linux AppImage) on a virtual Kindle-sized, greyscale screen. They need `curl` and `xvfb-run`.
-  ```bash
-  tools/emulator/run_emulator_tests.sh duas.sqlite /tmp/duas-emu
-  ```
-  The script `2-duas-emu-test.lua` is installed as a KOReader user patch and uses the plugin as a person would:
-  - menus and the browser;
-  - opening pages, and timing them;
-  - toggles, checking that the reading position is kept, that no reload prompt appears, and that a toggled page matches a freshly loaded one pixel for pixel;
-  - tapping links, including verse links and alias entries;
-  - search, bookmarks, Path to Supplication, image pages and gesture actions;
-  - installing the Amiri font;
-  - after a restart, that settings and bookmarks were kept and Amiri is used.
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for:
+- how it works;
+- the database format;
+- the tests, both off-device and inside a real KOReader;
+- benchmarks and how to make a release.
 
-  Screenshots and `results-phase*.txt` are written to `<workdir>/shots`.
-- **Without `ron.db`:** `tools/make_fake_db.py <DUASRON>/docs/data fake_ron.db` builds a stand-in from the web app's exported JSON (in the DUASRON repo).
+## Licence
+- **Code:** [AGPL-3.0](LICENSE), the same as KOReader.
+- **Content** in `ron.db`: not covered by that licence; it belongs to its owners.
+- **Amiri font:** SIL Open Font License.
+
+Details are in [NOTICE.md](NOTICE.md).

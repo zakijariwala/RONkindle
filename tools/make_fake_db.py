@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rebuild a ron.db-shaped SQLite file from docs/data JSON, for testing only.
 
-Usage: python3 tools/make_fake_db.py <DUASRON>/docs/data fake_ron.db
+Usage: python3 tools/make_fake_db.py <path to the web app's docs/data> fake_ron.db
 """
 import json, os, sqlite3, sys
 
