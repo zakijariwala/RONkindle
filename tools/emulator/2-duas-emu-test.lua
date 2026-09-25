@@ -19,6 +19,16 @@ local Screen = Device.screen
 
 local SHOTS = os.getenv("DUAS_SHOTS") or "/tmp"
 local PHASE = os.getenv("DUAS_PHASE") or "1"
+-- Multiplies every wait, for runs on a throttled CPU (see run_emulator_tests.sh).
+local SLOW = tonumber(os.getenv("DUAS_SLOW")) or 1
+
+local function memKB()
+    local f = io.open("/proc/self/status")
+    if not f then return 0, 0 end
+    local s = f:read("*all")
+    f:close()
+    return tonumber(s:match("VmRSS:%s*(%d+)")) or 0, tonumber(s:match("VmHWM:%s*(%d+)")) or 0
+end
 
 local results = {}
 local function log(...)
@@ -73,10 +83,10 @@ end
 -- ─── Step queue ─────────────────────────────────────────────────────────────
 local queue = {}
 local function step(name, fn, delay)
-    table.insert(queue, { name = name, fn = fn, delay = delay or 1 })
+    table.insert(queue, { name = name, fn = fn, delay = (delay or 1) * SLOW })
 end
 local function waitFor(name, cond, timeout)
-    table.insert(queue, { name = name, wait = cond, timeout = timeout or 30 })
+    table.insert(queue, { name = name, wait = cond, timeout = (timeout or 30) * SLOW })
 end
 
 local finish
@@ -89,7 +99,7 @@ local function runNext()
             local ok, res = pcall(s.wait)
             if ok and res then
                 log("WAITED", s.name, string.format("%.2fs", waited))
-                UIManager:scheduleIn(0.7, runNext)
+                UIManager:scheduleIn(0.7 * SLOW, runNext)
                 return
             end
             waited = waited + 0.25
@@ -103,7 +113,8 @@ local function runNext()
         poll()
     else
         UIManager:scheduleIn(s.delay, function()
-            log("STEP", s.name)
+            local rss, hwm = memKB()
+            log("STEP", s.name, string.format("[rss %d MB, peak %d MB]", math.floor(rss / 1024), math.floor(hwm / 1024)))
             local ok, err = xpcall(s.fn, debug.traceback)
             if not ok then check(false, s.name .. " crashed: " .. tostring(err)) end
             runNext()
