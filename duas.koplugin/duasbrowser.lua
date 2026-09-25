@@ -15,7 +15,7 @@ local Browser = Menu:extend{
     is_borderless = true,
     covers_fullscreen = true,
     title_bar_fm_style = true,
-    items_max_lines = 3, -- search results show a snippet under the title
+    single_line = true, -- plain lists; search results switch to 3 lines (view.multiline)
     plugin = nil, -- the Duas plugin instance
 }
 
@@ -34,6 +34,10 @@ function Browser:refresh(keep_page)
     if #items == 0 then
         items = { { text = _("Nothing here yet."), header = true, dim = true } }
     end
+    -- Measuring multi-line text for every item is the costly part of drawing a
+    -- list, so only search results (title + snippet) get it.
+    self.single_line = not view.multiline
+    self.items_max_lines = view.multiline and 3 or nil
     -- A negative item number keeps self.page (Menu clamps it to the new page count).
     self:switchItemTable(view.title, items, keep_page and -1 or nil)
 end

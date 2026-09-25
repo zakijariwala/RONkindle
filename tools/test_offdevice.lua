@@ -121,6 +121,25 @@ check(parent_node ~= nil and #DuasDB:children(parent_node.cat, parent_node.id) =
 local body = DuasDB:pageBody(page_node.id)
 check(body and #body > 0 and body:find('<div class="ln', 1, true), "page body decompresses to HTML")
 local chain = DuasDB:ancestry(page_node.id)
+
+-- long pages are split into parts; every line's part is recorded
+local split = DuasDB:rows("SELECT id FROM nodes WHERE parts > 1 ORDER BY parts DESC LIMIT 1")[1]
+check(split ~= nil, "some long pages are split into parts")
+if split then
+    local n = DuasDB:node(split[1])
+    local sizes = DuasDB:rows("SELECT max(size) FROM pages")[1][1]
+    check(sizes < 70000, "no part is larger than ~60 KB (" .. sizes .. ")")
+    local last = DuasDB:pageBody(n.id, n.parts)
+    local line = tonumber(last:match('id="l(%d+)"'))
+    check(line and DuasDB:partOfLine(n.id, line) == n.parts, "partOfLine finds a line in the last part")
+    local Pages0 = require("duaspages")
+    local p2 = Pages0:ensure(DuasDB, n, 2)
+    local id2, part2 = Pages0:nodeIdOf(p2)
+    check(id2 == n.id and part2 == 2, "part files are named <node>_<part>-…")
+    local f = io.open(p2, "rb"); local html2 = f:read("*all"); f:close()
+    check(html2:find('href="duas:' .. n.id .. '/1"', 1, true) and html2:find("Part 2 of " .. n.parts, 1, true),
+        "parts link to each other")
+end
 check(chain[#chain].id == page_node.id and chain[1].parent == 0, "ancestry runs from top level to node")
 
 -- ─── Search ─────────────────────────────────────────────────────────────────
@@ -202,6 +221,13 @@ package.preload["luasettings"] = stub({ open = function()
 end })
 
 local Duas = require("main")
+-- The plugin closes the database whenever it opens a page; the checks below
+-- query it directly, so reopen on demand.
+local orig_rows = DuasDB.rows
+DuasDB.rows = function(self, ...)
+    if not self.conn then self:open(db_path) end
+    return orig_rows(self, ...)
+end
 local page_path = Pages:ensure(DuasDB, page_node)
 local switched
 local link_mod = { onGotoLink = function() return "orig" end }
@@ -230,7 +256,7 @@ local target = DuasDB:children(page_node.cat, page_node.parent)
 local other
 for _, n in ipairs(target) do if n.has_page and n.id ~= page_node.id then other = n break end end
 if other then
-    check(link_mod:onGotoLink({ xpointer = "duas:" .. other.id }) == true and switched and switched:find("/" .. other.id .. "-", 1, true),
+    check(link_mod:onGotoLink({ xpointer = "duas:" .. other.id }) == true and switched and switched:find("/" .. other.id .. "_", 1, true),
         "duas: link opens the linked page")
 end
 check(link_mod:onGotoLink({ xpointer = "#some_anchor" }) == "orig", "other links go to KOReader")
@@ -240,7 +266,7 @@ local alias = DuasDB:rows("SELECT id, redirect FROM nodes WHERE redirect IS NOT 
 if alias then
     switched = nil
     plugin:openNode(alias[1])
-    check(switched and switched:find("/" .. alias[2] .. "-", 1, true), "alias entry opens its target page")
+    check(switched and switched:find("/" .. alias[2] .. "_", 1, true), "alias entry opens its target page")
 end
 local verse_link
 for _, r in ipairs(DuasDB:rows("SELECT node FROM pages")) do

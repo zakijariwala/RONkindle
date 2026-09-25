@@ -52,6 +52,7 @@ p.d a, p.tl a { font-style: normal; }
 div.im { text-align: center; margin: 0.3em 0; }
 img { max-width: 100%; }
 p.nav { font-size: 0.85em; text-align: center; margin: 1em 0; }
+p.parts { font-size: 0.8em; text-align: center; margin: 0.6em 0; }
 ul.kids { margin: 0.5em 0; }
 ]]
 

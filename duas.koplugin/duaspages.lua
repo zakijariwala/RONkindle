@@ -46,14 +46,15 @@ function Pages:isOurs(file)
     return file ~= nil and file:sub(1, #self.dir + 1) == self.dir .. "/"
 end
 
---- Node id of one of our page files, or nil.
+--- Node id and part of one of our page files, or nil.
 function Pages:nodeIdOf(file)
     if not self:isOurs(file) then return nil end
-    return tonumber(file:match("/(%d+)%-[^/]*%.html$"))
+    local id, part = file:match("/(%d+)_(%d+)%-[^/]*%.html$")
+    return tonumber(id), tonumber(part)
 end
 
-function Pages:pathFor(node)
-    return string.format("%s/%d-%s.html", self.dir, node.id, slug(node.en or node.rurdu))
+function Pages:pathFor(node, part)
+    return string.format("%s/%d_%d-%s.html", self.dir, node.id, part or 1, slug(node.en or node.rurdu))
 end
 
 --- Drop cached pages when a different database build is in use.
@@ -80,14 +81,28 @@ local function link(node, text)
     return string.format('<a href="duas:%d">%s</a>', node.id, esc(text or Pages.displayName(node)))
 end
 
-function Pages:render(db, node)
+local function partLinks(node, part)
+    local links = {}
+    if part > 1 then
+        table.insert(links, string.format('<a href="duas:%d/%d">‹ Part %d</a>', node.id, part - 1, part - 1))
+    end
+    table.insert(links, string.format("Part %d of %d", part, node.parts))
+    if part < node.parts then
+        table.insert(links, string.format('<a href="duas:%d/%d">Part %d ›</a>', node.id, part + 1, part + 1))
+    end
+    return '<p class="parts">' .. table.concat(links, " · ") .. "</p>"
+end
+
+function Pages:render(db, node, part)
+    part = part or 1
     local parts = {}
     local function add(s) table.insert(parts, s) end
 
     local title = Pages.displayName(node)
     add('<?xml version="1.0" encoding="UTF-8"?>\n')
     add('<html xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="UTF-8"/>')
-    add("<title>" .. esc(title) .. "</title></head><body>")
+    local doc_title = node.parts > 1 and string.format("%s (%d/%d)", title, part, node.parts) or title
+    add("<title>" .. esc(doc_title) .. "</title></head><body>")
 
     local crumbs = {}
     local cat = db:category(node.cat)
@@ -102,8 +117,16 @@ function Pages:render(db, node)
         add('<div class="pu x-ur" dir="rtl" lang="ur">' .. esc(node.urdu) .. "</div>")
     end
     add('<p class="crumb">' .. table.concat(crumbs, " › ") .. "</p>")
+    if node.parts > 1 then add(partLinks(node, part)) end
 
-    add(db:pageBody(node.id) or "")
+    add(db:pageBody(node.id, part) or "")
+
+    if node.parts > 1 then add(partLinks(node, part)) end
+    if part < node.parts then
+        add("</body></html>\n")
+        return table.concat(parts)
+    end
+    -- the last part carries the child list and the links to neighbouring pages
 
     if node.kids > 0 then
         add('<ul class="kids">')
@@ -126,9 +149,9 @@ function Pages:render(db, node)
 end
 
 --- Make sure the page file (and its images) exist; returns the file path.
-function Pages:ensure(db, node)
+function Pages:ensure(db, node, part)
     self:checkBuild(db:meta("build") or "?")
-    local path = self:pathFor(node)
+    local path = self:pathFor(node, part)
     if lfs.attributes(path, "mode") == "file" then
         return path
     end
@@ -138,7 +161,7 @@ function Pages:ensure(db, node)
             writeFile(img_path, img[2])
         end
     end
-    local ok, err = writeFile(path, self:render(db, node))
+    local ok, err = writeFile(path, self:render(db, node, part))
     if not ok then return nil, err end
     return path
 end

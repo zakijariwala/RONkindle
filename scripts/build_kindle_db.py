@@ -11,7 +11,9 @@ Hidden categories are never listed; their entries are likewise link targets.
 Reads ron.db and writes a slimmed, pre-rendered SQLite file:
   categories   visible categories
   nodes        the subindex tree (display names already resolved)
-  pages        one pre-rendered, zlib-compressed HTML body per subindex that has lines
+  pages        pre-rendered, zlib-compressed HTML per subindex that has lines,
+               split into parts of about PART_BYTES (long surahs, long duas)
+  anchors      which part holds each line, for pages with several parts
   images       decoded PNGs for the image-based lines
   texts + fts  (node, line, language) per searchable text plus its FTS5 index;
                result snippets are cut from the page itself on the device
@@ -32,7 +34,11 @@ import sys
 import time
 import zlib
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+
+# Long pages are split into parts of about this many bytes of HTML: every open
+# and every show/hide lays out a whole file, so cost grows with page length.
+PART_BYTES = 60_000
 
 # language key → CSS class suffix used by the plugin
 LANG_CLASS = {"en": "en", "rurdu": "ru", "urdu": "ur"}
@@ -467,19 +473,40 @@ CREATE TABLE categories (id INTEGER PRIMARY KEY, num INTEGER, en TEXT, rurdu TEX
 CREATE TABLE nodes (
     id INTEGER PRIMARY KEY, parent INTEGER, cat INTEGER, num INTEGER,
     en TEXT, rurdu TEXT, urdu TEXT, kids INTEGER, has_page INTEGER,
-    redirect INTEGER, redirect_line INTEGER, listed INTEGER);
+    redirect INTEGER, redirect_line INTEGER, listed INTEGER, parts INTEGER);
 CREATE INDEX nodes_parent ON nodes(cat, parent, listed, num);
-CREATE TABLE pages (node INTEGER PRIMARY KEY, size INTEGER, body BLOB);
+CREATE TABLE pages (node INTEGER, part INTEGER, size INTEGER, body BLOB, PRIMARY KEY (node, part));
+CREATE TABLE anchors (node INTEGER, line INTEGER, part INTEGER, PRIMARY KEY (node, line));
 CREATE TABLE images (name TEXT PRIMARY KEY, node INTEGER, data BLOB);
 CREATE INDEX images_node ON images(node);
-CREATE TABLE texts (id INTEGER PRIMARY KEY, node INTEGER, line INTEGER, lang TEXT);
+CREATE TABLE texts (id INTEGER PRIMARY KEY, node INTEGER, line INTEGER, lang TEXT, part INTEGER);
 CREATE VIRTUAL TABLE fts USING fts5(body, content='', detail=none, tokenize='unicode61 remove_diacritics 2');
 """
 
 
-def add_text(out, node, line, lang, raw):
-    rowid = out.execute("INSERT INTO texts (node, line, lang) VALUES (?,?,?)",
-                        (node, line, lang)).lastrowid
+def split_parts(blocks):
+    """Group rendered line blocks [(html, is_heading)] into parts of about
+    PART_BYTES, never ending a part on a heading (it goes with what follows)."""
+    total = sum(len(h.encode("utf-8")) for h, _ in blocks)
+    n = max(1, -(-total // PART_BYTES))
+    if n == 1:
+        return [blocks]
+    target = total / n
+    parts, acc = [[]], 0
+    for i, (h, head) in enumerate(blocks):
+        size = len(h.encode("utf-8"))
+        prev_heading = parts[-1] and parts[-1][-1][1]
+        if parts[-1] and acc + size / 2 > target and not prev_heading and len(parts) < n:
+            parts.append([])
+            acc = 0
+        parts[-1].append((h, head))
+        acc += size
+    return parts
+
+
+def add_text(out, node, line, lang, raw, part=1):
+    rowid = out.execute("INSERT INTO texts (node, line, lang, part) VALUES (?,?,?,?)",
+                        (node, line, lang, part)).lastrowid
     out.execute("INSERT INTO fts (rowid, body) VALUES (?,?)", (rowid, normalize(raw)))
 
 
@@ -571,33 +598,48 @@ def build(src, dst, include_hidden=False):
     for c in categories + [c for c in all_categories if c not in categories]:
         walk(("cat", c["Id"]))
 
-    pages = images_n = texts_n = 0
+    pages = parts_n = images_n = texts_n = 0
     for nid in order:
         n = nodes[nid]
         redirect = redirects.get(nid)
         lines = [] if redirect else by_node.get(nid, [])
         has_page = 1 if lines else 0
-        out.execute("INSERT INTO nodes VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", (
-            nid, n["parent"], n["cat"], n["num"], n["en"], n["rurdu"], n["urdu"],
-            kids.get(nid, 0), has_page, redirect and redirect[0], redirect and redirect[1], n["listed"]))
+        node_row = [nid, n["parent"], n["cat"], n["num"], n["en"], n["rurdu"], n["urdu"],
+                    kids.get(nid, 0), has_page, redirect and redirect[0], redirect and redirect[1],
+                    n["listed"], 0]
         title_text = " ".join(v for v in (n["en"], n["rurdu"], n["urdu"]) if v)
         if title_text and not redirect:
             add_text(out, nid, None, "title", title_text)
         if not lines:
+            out.execute("INSERT INTO nodes VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", node_row)
             continue
 
-        body, images, seen_ids = [], [], set()
+        blocks, images, seen_ids, anchored = [], [], set(), []
         for ln, v in zip(lines, verse_numbers(lines)):
             anchor = ln["id"] not in seen_ids
             seen_ids.add(ln["id"])
-            body.append(render_line(ln, v, anchor, links, nid, images))
-            for lang, raw in (line_texts(ln) if anchor else []):
-                add_text(out, nid, ln["id"], lang, raw)
-                texts_n += 1
-        page = "\n".join(body).encode("utf-8")
-        out.execute("INSERT INTO pages VALUES (?,?,?)", (nid, len(page), zlib.compress(page, 9)))
+            blocks.append((render_line(ln, v, anchor, links, nid, images), is_heading(ln)))
+            anchored.append(ln if anchor else None)
+        parts = split_parts(blocks)
+        node_row[-1] = len(parts)
+        out.execute("INSERT INTO nodes VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", node_row)
+        i = 0
+        for part_no, part in enumerate(parts, 1):
+            for _ in part:
+                ln = anchored[i]
+                i += 1
+                if ln is None:
+                    continue
+                if len(parts) > 1:
+                    out.execute("INSERT INTO anchors VALUES (?,?,?)", (nid, ln["id"], part_no))
+                for lang, raw in line_texts(ln):
+                    add_text(out, nid, ln["id"], lang, raw, part_no)
+                    texts_n += 1
+            page = "\n".join(h for h, _ in part).encode("utf-8")
+            out.execute("INSERT INTO pages VALUES (?,?,?,?)", (nid, part_no, len(page), zlib.compress(page, 9)))
         out.executemany("INSERT OR REPLACE INTO images VALUES (?,?,?)", images)
         pages += 1
+        parts_n += len(parts)
         images_n += len(images)
 
     build_id = time.strftime("%Y%m%d%H%M%S")
@@ -605,7 +647,8 @@ def build(src, dst, include_hidden=False):
         ("schema", str(SCHEMA_VERSION)), ("build", build_id), ("source", os.path.basename(src)),
         ("include_hidden", "1" if include_hidden else "0")])
     out.commit()
-    print(f"   {pages} pages, {images_n} images, {texts_n} searchable texts")
+    print(f"   {pages} pages ({parts_n} files after splitting long ones), {images_n} images, "
+          f"{texts_n} searchable texts")
     print("▶ Optimising …")
     out.execute("INSERT INTO fts (fts) VALUES ('optimize')")
     out.commit()

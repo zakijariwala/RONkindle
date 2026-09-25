@@ -11,12 +11,15 @@
 #                  script that moves itself into a CPU/memory-limited cgroup
 #   DUAS_SLOW      multiplies every wait in the test driver (throttled CPU)
 #   PHASE_TIMEOUT  seconds per phase (default 600)
+#   DRIVER         patch to run (default 2-duas-emu-test.lua; 2-duas-bench.lua times operations)
+#   PHASES         phases to run (default "1 2")
+#   PLUGIN_DIR     plugin to install (default: this checkout's duas.koplugin)
 # Screenshots and results-phase*.txt end up in <workdir>/shots.
 set -uo pipefail
 db=$(realpath "$1")
 work=$(realpath -m "${2:-/tmp/duas-emu}")
 here=$(cd "$(dirname "$0")" && pwd)
-plugin=$(realpath "$here/../../duas.koplugin")
+plugin=$(realpath "${PLUGIN_DIR:-$here/../../duas.koplugin}")
 
 mkdir -p "$work"
 if [ ! -x "$work/squashfs-root/usr/lib/koreader/reader.lua" ]; then
@@ -48,8 +51,8 @@ mkdir -p "$work/config/koreader/plugins" "$work/config/koreader/duas" "$work/con
          "$work/home" "$work/data" "$work/shots"
 ln -s "$plugin" "$work/config/koreader/plugins/duas.koplugin"
 cp "$db" "$work/config/koreader/duas/duas.sqlite"
-cp "$here/2-duas-emu-test.lua" "$work/config/koreader/patches/"
+cp "$here/${DRIVER:-2-duas-emu-test.lua}" "$work/config/koreader/patches/"
 
-run_phase 1
-run_phase 2
+for phase in ${PHASES:-1 2}; do run_phase "$phase"; done
 cat "$work/shots/results-phase1.txt" "$work/shots/results-phase2.txt" 2>/dev/null | grep -E "^FAIL|checks"
+cat "$work/shots/bench.txt" 2>/dev/null

@@ -12,7 +12,6 @@ local DataStorage = require("datastorage")
 local Dispatcher = require("dispatcher")
 local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
-local InputDialog = require("ui/widget/inputdialog")
 local LuaSettings = require("luasettings")
 local Notification = require("ui/widget/notification")
 local UIManager = require("ui/uimanager")
@@ -24,14 +23,17 @@ local util = require("util")
 local _ = require("gettext")
 local T = ffiUtil.template
 
-local Browser = require("duasbrowser")
-local DuasDB = require("duasdb")
-local Normalize = require("duasnormalize")
 local Pages = require("duaspages")
-local QuickList = require("duasquicklist")
 local Style = require("duasstyle")
 
-local SEARCH_LIMIT = 200
+-- Loaded on first use, so an idle plugin costs next to nothing.
+local lazy = setmetatable({}, { __index = function(t, k)
+    local m = require(k)
+    rawset(t, k, m)
+    return m
+end })
+
+local SEARCH_PAGE = 50 -- results per screen of search results
 local FONT_FILE = "Amiri-Regular.ttf"
 
 local LANG_LABELS = {
@@ -76,8 +78,11 @@ function Duas:isOurDocument()
     return self.ui.document ~= nil and Pages:isOurs(self.ui.document.file)
 end
 
+--- Node id and part of the page being read, or nil.
 function Duas:currentNodeId()
-    return self.ui.document and Pages:nodeIdOf(self.ui.document.file)
+    if self.ui.document then
+        return Pages:nodeIdOf(self.ui.document.file)
+    end
 end
 
 local function name(item)
@@ -108,6 +113,7 @@ function Duas:getDB()
         })
         return nil
     end
+    local DuasDB = lazy.duasdb
     local ok, err = DuasDB:open(path)
     if not ok then
         logger.warn("Duas: cannot open", path, err)
@@ -115,6 +121,12 @@ function Duas:getDB()
         return nil
     end
     return DuasDB
+end
+
+--- Close the database (it is only needed to browse, search or open a page).
+function Duas:releaseDB()
+    local DuasDB = rawget(lazy, "duasdb")
+    if DuasDB then DuasDB:close() end
 end
 
 -- ─── Visibility toggles ─────────────────────────────────────────────────────
@@ -187,19 +199,20 @@ function Duas:hookReader()
         end
     end
 
-    -- Links between pages use href="duas:<node id>" or "duas:<node id>:<line id>".
+    -- Links between pages: href="duas:<node>", "duas:<node>:<line>" (a verse)
+    -- or "duas:<node>/<part>" (another part of a long page).
     local link = self.ui.link
     if link then
         local orig_onGotoLink = link.onGotoLink
         link.onGotoLink = function(l, lnk, ...)
             local url = type(lnk) == "table" and lnk.xpointer
-            local id, line
-            if type(url) == "string" then
-                id, line = url:match("^duas:(%d+):?(%d*)$")
-            end
-            if id then
-                self:openNode(tonumber(id), tonumber(line))
-                return true
+            if type(url) == "string" and url:match("^duas:") then
+                local id, sep, n = url:match("^duas:(%d+)([:/]?)(%d*)$")
+                if id then
+                    n = tonumber(n)
+                    self:openNode(tonumber(id), sep == ":" and n or nil, sep == "/" and n or nil)
+                    return true
+                end
             end
             return orig_onGotoLink(l, lnk, ...)
         end
@@ -215,8 +228,9 @@ function Duas:hookReader()
     end
 end
 
---- Open a node: its page if it has one, otherwise the browser at that node.
-function Duas:openNode(id, line)
+--- Open a node: its page (the part holding line, or the given part) if it
+--- has one, otherwise the browser at that node.
+function Duas:openNode(id, line, part)
     local db = self:getDB()
     if not db then return end
     local node = db:node(id)
@@ -232,12 +246,17 @@ function Duas:openNode(id, line)
         self:showBrowser(self:viewsFor(node, true))
         return
     end
-    local path, err = Pages:ensure(db, node)
+    if line then
+        part = db:partOfLine(node.id, line)
+    end
+    part = math.max(1, math.min(part or 1, node.parts))
+    local path, err = Pages:ensure(db, node, part)
     if not path then
         UIManager:show(InfoMessage:new{ text = T(_("Cannot write the page:\n%1"), tostring(err)) })
         return
     end
     self:closeBrowser()
+    self:releaseDB() -- not needed while reading
 
     local goto_line
     if line then
@@ -274,7 +293,7 @@ function Duas:isBookmarked(id)
     return false
 end
 
-function Duas:toggleBookmark(node)
+function Duas:toggleBookmark(node, part)
     local bookmarks = self:getBookmarks()
     for i, b in ipairs(bookmarks) do
         if b.id == node.id then
@@ -285,7 +304,7 @@ function Duas:toggleBookmark(node)
             return false
         end
     end
-    table.insert(bookmarks, { id = node.id, title = name(node), time = os.time() })
+    table.insert(bookmarks, { id = node.id, part = part, title = name(node), time = os.time() })
     settings:saveSetting("bookmarks", bookmarks)
     settings:flush()
     Notification:notify(T(_("Bookmarked: %1"), name(node)), Notification.SOURCE_ALWAYS_SHOW)
@@ -355,7 +374,7 @@ function Duas:quickView()
             local db = self:getDB()
             if not db then return {} end
             local items = {}
-            for __, group in ipairs(QuickList) do
+            for __, group in ipairs(lazy.duasquicklist) do
                 table.insert(items, { text = "— " .. _(group.group) .. " —", header = true, dim = true })
                 for __, id in ipairs(group.items) do
                     local node = db:node(id)
@@ -382,7 +401,7 @@ function Duas:bookmarksView()
                 local node = db:node(b.id)
                 if node then
                     table.insert(items, {
-                        text = name(node), node = node, open_directly = true,
+                        text = name(node), node = node, part = b.part, open_directly = true,
                         mandatory = os.date("%d %b", b.time),
                     })
                 end
@@ -412,10 +431,10 @@ function Duas:showBrowser(views)
     self:closeBrowser()
     if not views then
         local current = self:currentNodeId()
-        local node = current and DuasDB:node(current)
+        local node = current and lazy.duasdb:node(current)
         views = node and self:viewsFor(node, false) or last_views or { self:rootView() }
     end
-    self.browser = Browser:new{
+    self.browser = lazy.duasbrowser:new{
         plugin = self,
         title = _("Duas"),
         views = views,
@@ -424,6 +443,7 @@ function Duas:showBrowser(views)
                 last_views = self.browser:getViews()
                 self.browser = nil
             end
+            self:releaseDB()
         end,
     }
     UIManager:show(self.browser)
@@ -443,7 +463,7 @@ function Duas:onItemSelected(browser, item)
     if node.kids > 0 and not item.open_directly then
         browser:push(self:nodeView(node.cat, node.id, name(node)))
     else
-        self:openNode(node.id, item.line)
+        self:openNode(node.id, item.line, item.part)
     end
 end
 
@@ -451,7 +471,7 @@ end
 
 function Duas:showSearchDialog()
     local dialog
-    dialog = InputDialog:new{
+    dialog = require("ui/widget/inputdialog"):new{
         title = _("Search duas"),
         input = last_query or "",
         input_hint = _("English, Roman Urdu, Urdu or Arabic"),
@@ -476,29 +496,32 @@ function Duas:showSearchDialog()
     dialog:onShowKeyboard()
 end
 
-function Duas:searchItems(db, query)
+--- One screen of search results (SEARCH_PAGE hits from offset), with
+--- snippets cut only for these. Returns items and whether more follow.
+function Duas:searchItems(db, query, offset)
+    local Normalize = lazy.duasnormalize
     local match = Normalize.matchExpression(query)
     if not match then return nil end
-    local hits, err = db:search(match, SEARCH_LIMIT)
+    local hits, err = db:search(match, SEARCH_PAGE + 1, offset or 0)
     if not hits then
         logger.warn("Duas: search failed", match, err)
         return nil, err
     end
+    local more = #hits > SEARCH_PAGE
+    if more then table.remove(hits) end
     local tokens = Normalize.tokens(query)
-    local nodes, bodies, items, seen = {}, {}, {}, {}
+    local nodes, bodies, items = {}, {}, {}
     for __, hit in ipairs(hits) do
         local node = nodes[hit.node] or db:node(hit.node)
         nodes[hit.node] = node
-        -- one result per line (or per page title), whichever language matched first
-        local key = hit.node .. ":" .. tostring(hit.line)
-        if node and not seen[key] then
-            seen[key] = true
+        if node then
             local text = name(node)
             if hit.line then
-                if bodies[hit.node] == nil then
-                    bodies[hit.node] = db:pageBody(hit.node) or false
+                local key = hit.node .. "/" .. hit.part
+                if bodies[key] == nil then
+                    bodies[key] = db:pageBody(hit.node, hit.part) or false
                 end
-                local snip = Pages.snippet(bodies[hit.node] or nil, hit.line, hit.lang, tokens)
+                local snip = Pages.snippet(bodies[key] or nil, hit.line, hit.lang, tokens)
                 if snip then text = text .. "\n" .. snip end
             end
             table.insert(items, {
@@ -507,24 +530,38 @@ function Duas:searchItems(db, query)
             })
         end
     end
-    return items, #hits >= SEARCH_LIMIT
+    return items, more
+end
+
+function Duas:searchView(query, offset)
+    local items, more = self:searchItems(self:getDB(), query, offset)
+    if not items then return nil end
+    if more then
+        table.insert(items, {
+            text = _("More results…"),
+            action = function(b) b:push(self:searchView(query, offset + SEARCH_PAGE)) end,
+        })
+    end
+    local shown = #items - (more and 1 or 0)
+    local title
+    if offset == 0 and not more then
+        title = T(_("“%1”: %2 results"), query, shown)
+    else
+        title = T(_("“%1”: results %2–%3"), query, offset + 1, offset + shown)
+    end
+    return { title = title, multiline = true, build = function() return items end }
 end
 
 function Duas:search(query)
-    local db = self:getDB()
-    if not db then return end
+    if not self:getDB() then return end
     query = util.trim(query or "")
     if query == "" then return end
     last_query = query
-    local items, more = self:searchItems(db, query)
-    if not items then
+    local view = self:searchView(query, 0)
+    if not view then
         UIManager:show(InfoMessage:new{ text = _("Could not search for that. Try other words."), timeout = 3 })
         return
     end
-    local view = {
-        title = T(_("“%1”: %2 results"), query, #items .. (more and "+" or "")),
-        build = function() return items end,
-    }
     if self.browser then
         self.browser:push(view)
     else
@@ -604,7 +641,10 @@ function Duas:getMenuItems()
         { text = _("Bookmarks"), callback = function() self:onDuasBookmarks() end },
     }
 
-    local current = self:isOurDocument() and self:currentNodeId()
+    local current, current_part
+    if self:isOurDocument() then
+        current, current_part = self:currentNodeId()
+    end
     if current then
         table.insert(items, {
             text_func = function()
@@ -614,7 +654,8 @@ function Duas:getMenuItems()
             callback = function(touchmenu_instance)
                 local db = self:getDB()
                 local node = db and db:node(current)
-                if node then self:toggleBookmark(node) end
+                if node then self:toggleBookmark(node, current_part) end
+                self:releaseDB()
                 if touchmenu_instance then touchmenu_instance:updateItems() end
             end,
         })
@@ -633,7 +674,7 @@ function Duas:getMenuItems()
     table.insert(items, { text = _("Show"), sub_item_table = show_items })
 
     table.insert(items, {
-        text = _("Install Amiri Arabic font"),
+        text = _("Install Amiri Arabic font (optional)"),
         enabled_func = function() return not self:isFontInstalled() end,
         callback = function() self:installFont() end,
     })
@@ -652,6 +693,7 @@ function Duas:showInfo()
     if db then
         text = T(_("Database: %1\nBuild: %2\nSource: %3\nPages cached in: %4"),
             path, db:meta("build") or "?", db:meta("source") or "?", Pages.dir)
+        self:releaseDB()
     else
         text = T(_("No database found. Copy duas.sqlite to:\n%1"),
             DataStorage:getDataDir() .. "/duas/duas.sqlite")

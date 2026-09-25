@@ -7,7 +7,7 @@ local SQ3 = require("lua-ljsqlite3/init")
 local zlib = require("ffi/zlib")
 
 local DuasDB = {
-    SCHEMA = 3, -- must match SCHEMA_VERSION in scripts/build_kindle_db.py
+    SCHEMA = 4, -- must match SCHEMA_VERSION in scripts/build_kindle_db.py
     conn = nil,
     path = nil,
 }
@@ -33,6 +33,8 @@ function DuasDB:open(path)
     end
     self.conn = conn
     self.path = path
+    -- Keep SQLite's own memory small: a 256 KB page cache, no memory mapping.
+    pcall(conn.exec, conn, "PRAGMA cache_size = -256; PRAGMA mmap_size = 0; PRAGMA temp_store = FILE;")
     local schema = self:meta("schema")
     if not schema then
         self:close()
@@ -60,6 +62,7 @@ function DuasDB:rows(sql, ...)
     if select("#", ...) > 0 then
         stmt:bind(...)
     end
+    -- (a statement per call: nothing is cached between calls)
     local out = {}
     while true do
         local row = stmt:step()
@@ -97,7 +100,7 @@ function DuasDB:category(id)
     return r and toCategory(r)
 end
 
-local NODE_COLS = "id, parent, cat, en, rurdu, urdu, kids, has_page, redirect, redirect_line, listed"
+local NODE_COLS = "id, parent, cat, en, rurdu, urdu, kids, has_page, redirect, redirect_line, listed, parts"
 
 local function toNode(r)
     return {
@@ -105,6 +108,7 @@ local function toNode(r)
         kids = r[7] or 0, has_page = (r[8] or 0) == 1,
         redirect = r[9], redirect_line = r[10], -- alias entries open another page
         listed = (r[11] or 0) == 1, -- hidden entries open from links and search only
+        parts = math.max(1, r[12] or 1), -- long pages are split into parts
     }
 end
 
@@ -155,27 +159,37 @@ function DuasDB:neighbours(node)
     return prev, nxt
 end
 
-function DuasDB:pageBody(id)
-    local r = self:rows("SELECT size, body FROM pages WHERE node = ?", id)[1]
+function DuasDB:pageBody(id, part)
+    local r = self:rows("SELECT size, body FROM pages WHERE node = ? AND part = ?", id, part or 1)[1]
     if not r then return nil end
     return zlib.zlib_uncompress(r[2], r[1])
+end
+
+--- Part of a (split) page holding a line; 1 when the page isn't split.
+function DuasDB:partOfLine(id, line)
+    local r = self:rows("SELECT part FROM anchors WHERE node = ? AND line = ?", id, line)[1]
+    return r and r[1] or 1
 end
 
 function DuasDB:images(id)
     return self:rows("SELECT name, data FROM images WHERE node = ?", id)
 end
 
---- Full-text search. Returns { node=, line=, lang= } in book order.
-function DuasDB:search(match, limit)
+--- Full-text search, one hit per line (or page title) in book order, with
+--- the first language that matched. Returns { node=, line=, lang=, part= }.
+function DuasDB:search(match, limit, offset)
     local hits = {}
+    -- SQLite returns the bare columns from the row holding min(rowid).
     local ok, rows = pcall(self.rows, self, [[
-        SELECT t.node, t.line, t.lang FROM fts JOIN texts t ON t.id = fts.rowid
-        WHERE fts MATCH ? ORDER BY fts.rowid LIMIT ?]], match, limit)
+        SELECT t.node, t.line, t.lang, t.part, min(fts.rowid) AS first
+        FROM fts JOIN texts t ON t.id = fts.rowid
+        WHERE fts MATCH ? GROUP BY t.node, ifnull(t.line, -1)
+        ORDER BY first LIMIT ? OFFSET ?]], match, limit, offset or 0)
     if not ok then
         return nil, rows
     end
     for _, r in ipairs(rows) do
-        table.insert(hits, { node = r[1], line = r[2], lang = r[3] })
+        table.insert(hits, { node = r[1], line = r[2], lang = r[3], part = r[4] or 1 })
     end
     return hits
 end

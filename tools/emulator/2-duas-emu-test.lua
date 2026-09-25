@@ -74,7 +74,11 @@ local function docFile()
 end
 local function docIs(node_id)
     local f = docFile()
-    return f and f:match("/" .. node_id .. "%-[^/]*%.html$") ~= nil
+    return f and f:match("/" .. node_id .. "_%d+%-[^/]*%.html$") ~= nil
+end
+local function docPart()
+    local f = docFile()
+    return f and tonumber(f:match("/%d+_(%d+)%-[^/]*%.html$"))
 end
 local function now()
     return require("ffi/util").getTimestamp and require("ffi/util").getTimestamp() or os.time()
@@ -262,8 +266,8 @@ if PHASE == "1" then
     step("Baqarah opened", function()
         log("TIMING open Baqarah", string.format("%.2fs", now() - state.t_open))
         state.pages_all = RUI().document:getPageCount()
-        check(state.pages_all > 50, "Baqarah paginates (" .. state.pages_all .. " pages)")
-        RUI():handleEvent(Event:new("GotoPage", 20))
+        check(docPart() == 1 and state.pages_all > 10, "Baqarah part 1 paginates (" .. state.pages_all .. " pages)")
+        RUI():handleEvent(Event:new("GotoPage", 12))
     end, 1.5)
     step("position before toggling", function()
         state.xp = RUI().rolling:getBookLocation()
@@ -335,6 +339,38 @@ if PHASE == "1" then
         check(P():isShown("vn"), "second dispatcher call shows verse numbers")
     end, 1.5)
 
+    -- ── Parts of a long page ──────────────────────────────────────────────
+    step("next part link", function()
+        RUI():handleEvent(Event:new("GotoPage", RUI().document:getPageCount()))
+    end)
+    step("tap 'Part 2 ›'", function()
+        local target
+        for _, l in ipairs(RUI().document:getPageLinks() or {}) do
+            if l.uri == "duas:1075/2" then target = l end
+        end
+        check(target ~= nil, "last page of part 1 links to part 2")
+        if target then
+            local x = math.floor((target.start_x + target.end_x) / 2)
+            RUI().link:onTap(nil, { ges = "tap", pos = Geom:new{ x = x, y = target.start_y + Screen:scaleBySize(5), w = 0, h = 0 } })
+        end
+    end)
+    waitFor("Baqarah part 2 open", function() return docIs(1075) and docPart() == 2 end)
+    step("verse 255 (Ayat al-Kursi) opens its part", function()
+        local db = P():getDB()
+        local r = db:rows("SELECT line FROM texts WHERE node = 1075 AND lang = 'ar' ORDER BY id")[255 + 1]
+        state.ak_line = r and r[1]
+        state.ak_part = state.ak_line and db:partOfLine(1075, state.ak_line)
+        P():openNode(1075, state.ak_line)
+    end)
+    waitFor("verse's part open", function() return docIs(1075) and docPart() == state.ak_part end)
+    step("landed on the verse", function()
+        local doc = RUI().document
+        check(state.ak_part and state.ak_part > 1, "late verse lives in a later part (" .. tostring(state.ak_part) .. ")")
+        check(doc:getPageFromXPointer("#l" .. state.ak_line) == doc:getCurrentPage(), "jump lands on the verse inside its part")
+        shot("baqarah-later-part")
+        check(require("duasdb").conn == nil, "database closed while reading")
+    end, 1.5)
+
     -- ── Links ─────────────────────────────────────────────────────────────
     step("open Fateha again for link test", function() P():openNode(1074) end)
     waitFor("Fateha open", function() return docIs(1074) end)
@@ -392,13 +428,13 @@ if PHASE == "1" then
         shot("search-result-opened")
     end, 1.5)
     step("search Arabic without harakat", function()
-        local items = P():searchItems(require("duasdb"), "الحمد لله رب العالمین")
+        local items = P():searchItems(P():getDB(), "الحمد لله رب العالمین")
         check(items and #items > 0, "Arabic search without harakat finds results (" .. tostring(items and #items) .. ")")
-        items = P():searchItems(require("duasdb"), "مہربان")
+        items = P():searchItems(P():getDB(), "مہربان")
         check(items and #items > 0, "Urdu search finds results")
-        items = P():searchItems(require("duasdb"), "Rehmat")
+        items = P():searchItems(P():getDB(), "Rehmat")
         check(items and #items > 0, "Roman Urdu search finds results")
-        items = P():searchItems(require("duasdb"), "zzqxnotaword")
+        items = P():searchItems(P():getDB(), "zzqxnotaword")
         check(items and #items == 0, "nonsense search returns no results")
     end)
     step("search results in browser for Arabic", function()
