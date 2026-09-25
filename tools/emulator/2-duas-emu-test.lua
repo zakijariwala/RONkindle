@@ -571,7 +571,7 @@ if PHASE == "1" then
 
     -- ── Images ────────────────────────────────────────────────────────────
     step("open a page with images", function()
-        local rows = require("duasdb"):rows("SELECT node FROM images LIMIT 1")
+        local rows = P():getDB():rows("SELECT node FROM images LIMIT 1")
         state.img_node = rows[1] and rows[1][1]
         check(state.img_node ~= nil, "database has image pages")
         if state.img_node then P():openNode(state.img_node) end
@@ -579,7 +579,7 @@ if PHASE == "1" then
     waitFor("image page open", function() return state.img_node and docIs(state.img_node) end)
     step("image page", function()
         shot("image-page")
-        local img = require("duasdb"):images(state.img_node)[1]
+        local img = P():getDB():images(state.img_node)[1]
         local f = io.open(require("duaspages").dir .. "/img/" .. img[1], "rb")
         check(f ~= nil, "image file written next to the page")
         if f then f:close() end

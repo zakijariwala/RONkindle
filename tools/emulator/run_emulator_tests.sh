@@ -39,7 +39,7 @@ run_phase() {
     DUAS_SHOTS="$work/shots" DUAS_PHASE=$phase DUAS_SLOW="${DUAS_SLOW:-1}" \
     HOME="$work/home" XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" KO_MULTIUSER=1 \
     EMULATE_READER_W=1072 EMULATE_READER_H=1448 EMULATE_READER_DPI=300 SDL_AUDIODRIVER=dummy \
-        timeout "${PHASE_TIMEOUT:-600}" xvfb-run -a -s "-screen 0 1200x1600x24" $RUN_WRAPPER ./reader.lua "$work/home" \
+        timeout "${PHASE_TIMEOUT:-600}" xvfb-run -a -s "-screen 0 1200x1600x24" ${RUN_WRAPPER:-} ./reader.lua "$work/home" \
         > "$work/log-phase$phase.txt" 2>&1
     grep -E "^DUASTEST (FAIL|SUMMARY|TIMING)" "$work/log-phase$phase.txt"
     grep -E "Lua error|stack traceback|\\bERROR\\b" "$work/log-phase$phase.txt" | head -20
