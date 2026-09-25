@@ -1,0 +1,6 @@
+# Built Kindle database (scripts/build_kindle_db.py)
+duas.sqlite
+
+# Python
+__pycache__/
+*.pyc
