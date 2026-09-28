@@ -25,8 +25,11 @@ Style.TEXT_PARTS = { ar = true, tr = true, en = true, ru = true, ur = true }
 
 Style.DEFAULTS = { ar = true, tr = true, en = true, ru = true, ur = true, notes = true, vn = true, tj = true }
 
+-- Everything on a page is centred, Arabic and Urdu included. !important:
+-- KOReader's own style tweaks (e.g. "Justify all paragraphs") must not win.
 local BASE = [[
 body { margin: 0; }
+body, h1, p, div, li { text-align: center !important; }
 h1.pt { font-size: 1.35em; text-align: center; margin: 0.4em 0 0.1em 0; hyphens: none; }
 div.pu { font-size: 1.15em; text-align: center; margin: 0 0 0.1em 0; font-family: "Noto Naskh Arabic"; }
 p.crumb { font-size: 0.7em; text-align: center; margin: 0 0 1.2em 0; text-indent: 0; }
@@ -37,23 +40,22 @@ div.t { text-align: center; font-weight: bold; margin: 0.5em 0 0.3em 0; hyphens:
 div.tt { margin: 0; }
 p.d { font-size: 0.85em; font-style: italic; margin: 0.2em 0; }
 p.lnk { font-weight: bold; margin: 0.3em 0; }
-p.ar { font-family: "Amiri", "Noto Naskh Arabic"; font-size: 1.45em; line-height: 1.9; text-align: right; margin: 0.3em 0; hyphens: none; }
+p.ar { font-family: "Amiri", "Noto Naskh Arabic"; font-size: 1.45em; line-height: 1.9; margin: 0.3em 0; hyphens: none; }
 div.red p.ar { font-weight: bold; }
 span.tj { font-weight: bold; }
 sup.ws { font-size: 0.55em; font-weight: normal; }
 p.tr { font-style: italic; margin: 0.25em 0; }
 p.tl { margin: 0.25em 0; }
-p.x-ur, div.x-ur { font-family: "Noto Naskh Arabic"; font-size: 1.1em; line-height: 1.7; text-align: right; }
+p.x-ur, div.x-ur { font-family: "Noto Naskh Arabic"; font-size: 1.1em; line-height: 1.7; }
 span.x-ur { font-family: "Noto Naskh Arabic"; }
-div.t div.x-ur { text-align: center; }
-div.pu { text-align: center; }
 b.sn { font-weight: bold; }
 p.d a, p.tl a { font-style: normal; }
 div.im { text-align: center; margin: 0.3em 0; }
 img { max-width: 100%; }
 p.nav { font-size: 0.85em; text-align: center; margin: 1em 0; }
 p.parts { font-size: 0.8em; text-align: center; margin: 0.6em 0; }
-ul.kids { margin: 0.5em 0; }
+ul.kids { margin: 0.5em 0; padding: 0; list-style-type: none; }
+ul.kids li { margin: 0.35em 0; }
 ]]
 
 local TAJWEED_OFF = [[
