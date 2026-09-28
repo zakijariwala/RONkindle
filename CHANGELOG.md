@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Every page is centred: titles, Arabic, transliteration, translations, Urdu, notes, links and the list of sub-entries (without bullets). Centring wins over KOReader's own "justify" style tweaks.
+
 ## 1.0.0 (2026-09-25)
 First release.
 
