@@ -95,7 +95,14 @@ RUN_WRAPPER=$PWD/tools/emulator/limit.sh CPU_PCT=10 \
 - `limit.sh` runs KOReader, and not the X server, in a cgroup (v1, needs root). `CPU_PCT` limits the CPU and `MEM_MB` the memory.
 - `PLUGIN_DIR` benchmarks another checkout of the plugin.
 
-Memory figures from the desktop AppImage are dominated by KOReader's desktop libraries. They're much higher than on an e-reader.
+Memory figures from the desktop AppImage are dominated by KOReader's desktop libraries. They're much higher than on an e-reader: on a Kindle Paperwhite the whole KOReader process stays at 31–57 MB during the benchmark.
+
+### On a Kindle
+The Paperwhite figures in the README come from `2-duas-bench.lua` run on the device (firmware 5.19.5, KOReader v2026.07.2), with two changes:
+- the result lines go to KOReader's log (`crash.log`) instead of `bench.txt`;
+- the final `UIManager:quit(0)` is replaced by a log line. On a Kindle, quitting KOReader hands the screen back to the Kindle's own software; quitting and starting KOReader again in quick succession rebooted a Paperwhite twice.
+
+It ran in a scratch KOReader profile, with `duas.sqlite` copied to `<profile>/duas/`, so the reading history and settings of the device were not touched. The tooling for this (SSH, a scratch profile, KOReader's own restart) is `tools/kindle.sh` in [Kindle-plugin](https://github.com/zakijariwala/Kindle-plugin) (its docs/TESTING.md, section 3).
 
 ## Releasing
 1. Bump `version` in `duas.koplugin/_meta.lua` and add an entry to `CHANGELOG.md`.

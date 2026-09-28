@@ -22,7 +22,7 @@ A [KOReader](https://github.com/koreader/koreader) plugin for reading the *Path 
   - The database is closed while you read.
 
 ## Install
-Requirements: a device running KOReader, such as a jailbroken Kindle, Kobo or PocketBook.
+Requirements: a device running KOReader, such as a jailbroken Kindle, Kobo or PocketBook. Tested on a Kindle Paperwhite (firmware 5.19.5, KOReader v2026.07.2).
 
 1. Download `duas-kindle-<version>.zip` from the [releases](../../releases), or build it yourself (see below).
 2. Connect the device over USB and unzip the file at the top level of its drive. It merges into the existing `koreader/` folder, adding:
@@ -55,15 +55,18 @@ Options and behaviour:
   - Other pages number every Arabic line that isn't a heading.
 
 ## Performance
-Measured in KOReader v2026.07.2 on a virtual greyscale screen of 1072×1448 at 300 dpi, with KOReader limited to 10% of one desktop CPU core (see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)):
+Measured on a **Kindle Paperwhite** (firmware 5.19.5, 1272×1696, KOReader v2026.07.2), two runs of the benchmark below, next to the earlier estimate from a virtual greyscale screen of 1072×1448 at 300 dpi with KOReader limited to 10% of one desktop CPU core (see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)):
 
-| Operation | Time |
-|---|---|
-| Open the browser | 0.5 s |
-| Open Baqarah, the longest page (part 1 of 9) | 1.5 s |
-| Hide or show a language on that page | 0.4–0.5 s |
-| Search, even for a very common word | 0.1 s or less |
-| Jump to a verse in another part | 1.5 s |
+| Operation | Kindle Paperwhite | Emulator, 10% CPU |
+|---|---|---|
+| Open the browser | 0.1 s | 0.5 s |
+| Open Fateha, a short page | 1.4–1.5 s | |
+| Open Baqarah, the longest page (part 1 of 9) | 1.4 s | 1.5 s |
+| Hide or show a language on that page | 0.6 s | 0.4–0.5 s |
+| Search "kumail" / "allah" (very common) | 0.1 s / 0.2 s | 0.1 s or less |
+| Jump to a verse in another part | 1.2 s | 1.5 s |
+
+Memory on the Kindle: KOReader's whole process stays at 31–57 MB while browsing, reading Baqarah and searching (the Kindle has 1 GB).
 
 ## Development
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for:
